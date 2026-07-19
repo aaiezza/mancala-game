@@ -8,3 +8,13 @@ Implemented rules include sowing, skipping the opponent's store, extra turns, op
 mvn spotless:apply
 mvn verify
 ```
+
+## Terminal playtest
+
+Play against the deterministic minimax artificial player from a terminal:
+
+```bash
+mvn -Pterminal test-compile exec:java
+```
+
+You play the south side and move first. Enter a pit number from `1` through `6`, or enter `q` to quit.

@@ -8,6 +8,7 @@
     <kotlin.version>2.2.20</kotlin.version>
     <junit.version>5.13.4</junit.version>
     <spotless.version>3.8.0</spotless.version>
+    <exec.version>3.6.3</exec.version>
     <kotlin.compiler.daemon>false</kotlin.compiler.daemon>
   </properties>
   <dependencies>
@@ -56,4 +57,22 @@
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>terminal</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>${exec.version}</version>
+            <configuration>
+              <mainClass>games.mancala.MancalaTerminalPlaytest</mainClass>
+              <classpathScope>test</classpathScope>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
