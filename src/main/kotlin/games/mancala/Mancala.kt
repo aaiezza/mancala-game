@@ -213,7 +213,7 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
         val opponent = if (side == Side.SOUTH) Side.NORTH else Side.SOUTH
         return (0 until pitsPerSide).map { Cup.Pit(side, PitIndex(it)) } +
             Cup.Store(side) +
-            (pitsPerSide - 1 downTo 0).map { Cup.Pit(opponent, PitIndex(it)) }
+            (0 until pitsPerSide).map { Cup.Pit(opponent, PitIndex(it)) }
     }
 
     private fun opposite(pit: Cup.Pit) = Cup.Pit(

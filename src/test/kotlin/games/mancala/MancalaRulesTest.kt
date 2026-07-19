@@ -43,6 +43,21 @@ class MancalaRulesTest {
     }
 
     @Test
+    fun `sowing continues into opponent pits adjacent to own store`() {
+        val (game, initial) = Mancala.newGame(south, north)
+        val engine = GameEngine(game)
+
+        val afterExtraTurn = engine.play(initial, south, Sow(PitIndex(2)))
+        val result = engine.play(afterExtraTurn, south, Sow(PitIndex(3)))
+
+        assertEquals(listOf(4, 4, 0, 0, 6, 6), result.board.pits.getValue(Side.SOUTH))
+        assertEquals(listOf(5, 5, 4, 4, 4, 4), result.board.pits.getValue(Side.NORTH))
+        assertEquals(2, result.board.stores.getValue(Side.SOUTH))
+        assertEquals(0, result.board.stores.getValue(Side.NORTH))
+        assertEquals(48, totalStones(result.board))
+    }
+
+    @Test
     fun `landing in own store grants another turn`() {
         val (game, initial) = Mancala.newGame(south, north)
         val result = GameEngine(game).play(initial, south, Sow(PitIndex(2)))
