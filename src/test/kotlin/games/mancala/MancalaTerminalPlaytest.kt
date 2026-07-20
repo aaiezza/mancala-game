@@ -9,7 +9,8 @@ object MancalaTerminalPlaytest {
     fun main(args: Array<String>) {
         val human = PlayerId("human")
         val computer = PlayerId("computer")
-        val (game, initial) = Mancala.newGame(human, computer)
+        val (game, initial) = Mancala.newSelfPlayGame(computer)
+        //  val (game, initial) = Mancala.newGame(computer, computer)
         val engine = GameEngine(game)
         val artificialPlayer = KalahArtificialPlayer(computer)
         var state = initial
@@ -24,7 +25,7 @@ object MancalaTerminalPlaytest {
                 engine.play(state, human, intent)
             } else {
                 val intent = artificialPlayer.chooseIntent(game, state)
-                println("Computer chooses pit ${intent.pit.value + 1}.\n")
+                println("${state.currentPlayer?.value} ${state.currentSide} chooses pit ${intent.pit.value + 1}.\n")
                 engine.play(state, computer, intent)
             }
         }
