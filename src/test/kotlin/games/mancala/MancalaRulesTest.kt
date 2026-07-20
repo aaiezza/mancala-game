@@ -21,6 +21,33 @@ class MancalaRulesTest {
     }
 
     @Test
+    fun `one player can play both sides`() {
+        val player = PlayerId("solo")
+        val (game, initial) = Mancala.newSelfPlayGame(player)
+        val engine = GameEngine(game)
+
+        val afterSouthMove = engine.play(initial, player, Sow(PitIndex(0)))
+        val afterNorthMove = engine.play(afterSouthMove, player, Sow(PitIndex(0)))
+
+        assertEquals(Side.NORTH, afterSouthMove.currentSide)
+        assertEquals(player, afterSouthMove.currentPlayer)
+        assertEquals(Side.SOUTH, afterNorthMove.currentSide)
+        assertEquals(player, afterNorthMove.currentPlayer)
+    }
+
+    @Test
+    fun `current player is derived from the player on the current side`() {
+        val board = board(
+            southPits = listOf(1, 0, 0, 0, 0, 0),
+            northPits = listOf(1, 0, 0, 0, 0, 0),
+        )
+
+        val (_, state) = Mancala.customGame(south, north, board, currentSide = Side.NORTH)
+
+        assertEquals(north, state.currentPlayer)
+    }
+
+    @Test
     fun `empty pits are not legal intents`() {
         val board = board(southPits = listOf(0, 1, 0, 0, 0, 0), northPits = listOf(1, 0, 0, 0, 0, 0))
         val (game, state) = Mancala.customGame(south, north, board)
