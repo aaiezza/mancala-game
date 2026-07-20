@@ -90,7 +90,7 @@ data class MancalaState(
     override val history: EventHistory<MancalaEvent> = EventHistory(),
 ) : BoardGameState<MancalaEvent, MancalaBoard>,
     HistoryWritableState<MancalaEvent> {
-    override val currentPlayer: PlayerId? get() = currentSide?.let(registry::playerOn)
+    override val turn: TurnContext? get() = currentSide?.let { TurnContext(registry.playerOn(it)) }
 
     override fun withHistory(history: EventHistory<MancalaEvent>) = copy(history = history)
 }
@@ -109,33 +109,50 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
         val side = state.requireCurrentSide()
         val from = Cup.Pit(side, intent.pit)
         val sowing = sow(state.board, from)
-        val events = mutableListOf<MancalaEvent>(MancalaEvent.StonesSown(from, sowing.placements))
+        val steps = mutableListOf<ResolutionStep<MancalaEvent>>(
+            ResolutionStep.PlayerDriven(listOf(MancalaEvent.StonesSown(from, sowing.placements))),
+        )
         var resolvedBoard = sowing.board
 
         val lastPit = sowing.lastCup as? Cup.Pit
         if (lastPit?.side == side && sowing.lastPitWasEmpty && resolvedBoard.stonesAt(opposite(lastPit)) > 0) {
             val opposite = opposite(lastPit)
             val captured = resolvedBoard.stonesAt(opposite) + 1
-            events += MancalaEvent.StonesCaptured(lastPit, opposite, captured)
+            steps += ResolutionStep.RuleDriven(
+                CAPTURE_RULE,
+                listOf(MancalaEvent.StonesCaptured(lastPit, opposite, captured)),
+            )
             resolvedBoard = resolvedBoard.empty(lastPit).empty(opposite).addToStore(side, captured)
         }
 
         val gameEnded = Side.entries.any(resolvedBoard::sideIsEmpty)
         if (gameEnded) {
+            val collectionEvents = mutableListOf<MancalaEvent>()
             Side.entries.filterNot(resolvedBoard::sideIsEmpty).forEach { remainingSide ->
                 val remaining = resolvedBoard.stonesOnSide(remainingSide)
-                events += MancalaEvent.RemainingStonesCollected(remainingSide, remaining)
+                collectionEvents += MancalaEvent.RemainingStonesCollected(remainingSide, remaining)
                 resolvedBoard = resolvedBoard.collectSide(remainingSide)
             }
-            events += MancalaEvent.TurnAdvanced(nextSide = null, extraTurn = false)
+            if (collectionEvents.isNotEmpty()) {
+                steps += ResolutionStep.RuleDriven(END_GAME_COLLECTION_RULE, collectionEvents)
+            }
+            steps += ResolutionStep.RuleDriven(
+                TURN_ADVANCEMENT_RULE,
+                listOf(MancalaEvent.TurnAdvanced(nextSide = null, extraTurn = false)),
+            )
         } else {
             val extraTurn = sowing.lastCup == Cup.Store(side)
-            events += MancalaEvent.TurnAdvanced(
-                nextSide = if (extraTurn) side else side.opponent(),
-                extraTurn = extraTurn,
+            steps += ResolutionStep.RuleDriven(
+                TURN_ADVANCEMENT_RULE,
+                listOf(
+                    MancalaEvent.TurnAdvanced(
+                        nextSide = if (extraTurn) side else side.opponent(),
+                        extraTurn = extraTurn,
+                    ),
+                ),
             )
         }
-        return Resolution(events)
+        return Resolution(steps)
     }
 
     override fun reduce(state: MancalaState, event: MancalaEvent): MancalaState = when (event) {
@@ -217,6 +234,10 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
     )
 
     companion object {
+        private val CAPTURE_RULE = RuleId("mancala.capture")
+        private val END_GAME_COLLECTION_RULE = RuleId("mancala.collect-remaining-stones")
+        private val TURN_ADVANCEMENT_RULE = RuleId("mancala.advance-turn")
+
         fun newGame(
             south: PlayerId,
             north: PlayerId,

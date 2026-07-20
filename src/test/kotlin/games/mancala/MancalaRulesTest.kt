@@ -2,6 +2,8 @@ package games.mancala
 
 import games.core.GameEngine
 import games.core.PlayerId
+import games.core.RuleId
+import games.core.TransitionCause
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -100,12 +102,23 @@ class MancalaRulesTest {
             northPits = listOf(3, 1, 0, 0, 0, 0),
         )
         val (game, state) = Mancala.customGame(south, north, board)
-        val result = GameEngine(game).play(state, south, Sow(PitIndex(4)))
+        val progression = GameEngine(game).playWithTrace(state, south, Sow(PitIndex(4)))
+        val result = progression.resultingState
 
         assertEquals(4, result.board.stores.getValue(Side.SOUTH))
         assertEquals(0, result.board.stonesAt(Cup.Pit(Side.SOUTH, PitIndex(5))))
         assertEquals(0, result.board.stonesAt(Cup.Pit(Side.NORTH, PitIndex(0))))
         assertFalse(result.history.events.none { it.event is MancalaEvent.StonesCaptured })
+        assertEquals(
+            listOf(
+                TransitionCause.PlayerDriven(south, Sow(PitIndex(4))),
+                TransitionCause.RuleDriven(RuleId("mancala.capture")),
+                TransitionCause.RuleDriven(RuleId("mancala.advance-turn")),
+            ),
+            progression.steps.map { it.cause },
+        )
+        assertEquals(0, progression.steps.first().resultingState.board.stores.getValue(Side.SOUTH))
+        assertEquals(1, progression.steps.first().resultingState.board.stonesAt(Cup.Pit(Side.SOUTH, PitIndex(5))))
     }
 
     private fun board(
