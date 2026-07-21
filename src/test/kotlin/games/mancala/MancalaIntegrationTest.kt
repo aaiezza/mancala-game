@@ -48,4 +48,28 @@ class MancalaIntegrationTest {
 
         assertEquals(GameOutcome.Draw, game.outcome(result))
     }
+
+    @Test
+    fun `terminal UI renders sowing capture and turn advancement in order`() {
+        val board = MancalaBoard(
+            pits = mapOf(
+                Side.SOUTH to listOf(1, 0, 0, 0, 1, 0),
+                Side.NORTH to listOf(3, 1, 0, 0, 0, 0),
+            ),
+            stores = mapOf(Side.SOUTH to 0, Side.NORTH to 0),
+        )
+        val (game, initial) = Mancala.customGame(south, north, board)
+
+        val progression = GameEngine(game).playWithTrace(initial, south, Sow(PitIndex(4)))
+        val rendered = MancalaTerminalRenderer.renderProgression(progression)
+
+        val sowing = rendered.indexOf("Player-driven: south submitted")
+        val capture = rendered.indexOf("Rule-driven: mancala.capture")
+        val turnAdvance = rendered.indexOf("Rule-driven: mancala.advance-turn")
+        assertTrue(sowing >= 0)
+        assertTrue(capture > sowing)
+        assertTrue(turnAdvance > capture)
+        assertTrue("Captured 4 stones" in rendered)
+        assertTrue("Turn owner: north; active side: NORTH" in rendered)
+    }
 }

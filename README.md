@@ -11,12 +11,12 @@ mvn spotless:apply
 mvn verify
 ```
 
-## Terminal playtest
+## Terminal transition-trace playtest
 
-Play against the deterministic minimax artificial player from a terminal:
+Watch the deterministic minimax artificial player play both sides while the terminal renders every player-driven and rule-driven transition:
 
 ```bash
 mvn -Pterminal test-compile exec:java
 ```
 
-You play the south side and move first. Enter a pit number from `1` through `6`, or enter `q` to quit.
+Each move prints its sowing result, any capture or end-game collection, and the resulting turn advancement as separate semantic states.
