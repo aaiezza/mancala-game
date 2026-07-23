@@ -15,7 +15,7 @@ class KalahArtificialPlayerTest {
 
         val chosen = KalahArtificialPlayer(player, searchDepth = 1).chooseIntent(game, northTurn)
 
-        assertEquals(Side.NORTH, northTurn.currentSide)
+        assertEquals(Side.NORTH, northTurn.activeSide)
         assertTrue(chosen in game.legalIntents(northTurn).map { it.intent })
     }
 

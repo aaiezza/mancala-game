@@ -40,7 +40,7 @@ class KalahArtificialPlayer(
         val childScores = game.legalIntents(state).map { legal ->
             score(game, play(game, state, legal.intent), side, depth - 1)
         }
-        return if (state.currentSide == side) childScores.max() else childScores.min()
+        return if (state.activeSide == side) childScores.max() else childScores.min()
     }
 
     private fun heuristic(state: MancalaState, side: Side): Int {

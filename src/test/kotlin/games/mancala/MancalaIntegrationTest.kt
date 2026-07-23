@@ -3,8 +3,9 @@ package games.mancala
 import games.core.GameEngine
 import games.core.GameOutcome
 import games.core.PlayerId
+import games.core.RuleId
+import games.core.TransitionCause
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -23,14 +24,21 @@ class MancalaIntegrationTest {
         )
         val (game, initial) = Mancala.customGame(south, north, board)
 
-        val result = GameEngine(game).play(initial, south, Sow(PitIndex(5)))
+        val progression = GameEngine(game).playWithTrace(initial, south, Sow(PitIndex(5)))
+        val result = progression.resultingState
 
-        assertNull(result.currentPlayer)
+        assertEquals(MancalaStatus.Won(north, Side.NORTH), result.status)
+        assertTrue(result.decisionActors.isEmpty())
         assertTrue(result.board.pits.values.flatten().all { it == 0 })
         assertEquals(1, result.board.stores.getValue(Side.SOUTH))
         assertEquals(2, result.board.stores.getValue(Side.NORTH))
         assertEquals(GameOutcome.PlayerWon(north), game.outcome(result))
         assertEquals(3, result.history.events.size)
+        assertEquals(
+            TransitionCause.RuleDriven(RuleId("mancala.game-end")),
+            progression.steps.last().cause,
+        )
+        assertTrue(progression.steps.last().events.single() is MancalaEvent.GameWon)
     }
 
     @Test
@@ -46,6 +54,7 @@ class MancalaIntegrationTest {
 
         val result = GameEngine(game).play(initial, south, Sow(PitIndex(5)))
 
+        assertEquals(MancalaStatus.Draw, result.status)
         assertEquals(GameOutcome.Draw, game.outcome(result))
     }
 
@@ -70,6 +79,7 @@ class MancalaIntegrationTest {
         assertTrue(capture > sowing)
         assertTrue(turnAdvance > capture)
         assertTrue("Captured 4 stones" in rendered)
-        assertTrue("Turn owner: north; active side: NORTH" in rendered)
+        assertTrue("Awaiting sow: turn owner north; active side NORTH" in rendered)
+        assertTrue("Resolving sow: south on SOUTH; no player decision required" in rendered)
     }
 }

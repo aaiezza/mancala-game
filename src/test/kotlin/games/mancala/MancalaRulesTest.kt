@@ -4,8 +4,11 @@ import games.core.GameEngine
 import games.core.PlayerId
 import games.core.RuleId
 import games.core.TransitionCause
+import games.core.TurnContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -31,9 +34,9 @@ class MancalaRulesTest {
         val afterSouthMove = engine.play(initial, player, Sow(PitIndex(0)))
         val afterNorthMove = engine.play(afterSouthMove, player, Sow(PitIndex(0)))
 
-        assertEquals(Side.NORTH, afterSouthMove.currentSide)
+        assertEquals(Side.NORTH, afterSouthMove.activeSide)
         assertEquals(player, afterSouthMove.currentPlayer)
-        assertEquals(Side.SOUTH, afterNorthMove.currentSide)
+        assertEquals(Side.SOUTH, afterNorthMove.activeSide)
         assertEquals(player, afterNorthMove.currentPlayer)
     }
 
@@ -46,7 +49,43 @@ class MancalaRulesTest {
 
         val (_, state) = Mancala.customGame(south, north, board, currentSide = Side.NORTH)
 
+        val status = assertInstanceOf(MancalaStatus.AwaitingSow::class.java, state.status)
         assertEquals(north, state.currentPlayer)
+        assertEquals(TurnContext(north), status.turn)
+        assertEquals(Side.NORTH, status.activeSide)
+    }
+
+    @Test
+    fun `custom games require explicit self play construction`() {
+        val board = board(
+            southPits = listOf(1, 0, 0, 0, 0, 0),
+            northPits = listOf(1, 0, 0, 0, 0, 0),
+        )
+        val player = PlayerId("solo")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            Mancala.customGame(player, player, board)
+        }
+
+        val (_, state) = Mancala.customSelfPlayGame(player, board, currentSide = Side.NORTH)
+        assertEquals(Side.NORTH, state.activeSide)
+        assertEquals(player, state.currentPlayer)
+    }
+
+    @Test
+    fun `status rejects a turn owner who does not control the active side`() {
+        val board = board(
+            southPits = listOf(1, 0, 0, 0, 0, 0),
+            northPits = listOf(1, 0, 0, 0, 0, 0),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            MancalaState(
+                board = board,
+                registry = MancalaPlayers(south, north),
+                status = MancalaStatus.AwaitingSow(TurnContext(north), Side.SOUTH),
+            )
+        }
     }
 
     @Test
@@ -119,6 +158,8 @@ class MancalaRulesTest {
         )
         assertEquals(0, progression.steps.first().resultingState.board.stores.getValue(Side.SOUTH))
         assertEquals(1, progression.steps.first().resultingState.board.stonesAt(Cup.Pit(Side.SOUTH, PitIndex(5))))
+        assertTrue(progression.steps.first().resultingState.status is MancalaStatus.ResolvingSow)
+        assertTrue(progression.steps.first().resultingState.decisionActors.isEmpty())
     }
 
     private fun board(

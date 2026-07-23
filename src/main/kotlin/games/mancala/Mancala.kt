@@ -22,7 +22,9 @@ sealed interface MancalaEvent : GameEvent {
     data class StonesSown(val from: Cup.Pit, val placements: List<Cup>) : MancalaEvent
     data class StonesCaptured(val landingPit: Cup.Pit, val oppositePit: Cup.Pit, val stones: Int) : MancalaEvent
     data class RemainingStonesCollected(val side: Side, val stones: Int) : MancalaEvent
-    data class TurnAdvanced(val nextSide: Side?, val extraTurn: Boolean) : MancalaEvent
+    data class TurnAdvanced(val nextPlayer: PlayerId, val nextSide: Side, val extraTurn: Boolean) : MancalaEvent
+    data class GameWon(val winner: PlayerId, val winningSide: Side) : MancalaEvent
+    data object GameDrawn : MancalaEvent
 }
 
 data class KalahConfiguration(
@@ -82,15 +84,56 @@ data class MancalaBoard(
     }
 }
 
+sealed interface MancalaStatus {
+    val turn: TurnContext?
+
+    data class AwaitingSow(override val turn: TurnContext, val activeSide: Side) : MancalaStatus
+
+    data class ResolvingSow(val player: PlayerId, val side: Side, val from: Cup.Pit) : MancalaStatus {
+        override val turn = null
+    }
+
+    data class Won(val winner: PlayerId, val winningSide: Side) : MancalaStatus {
+        override val turn = null
+    }
+
+    data object Draw : MancalaStatus {
+        override val turn = null
+    }
+}
+
 data class MancalaState(
     override val board: MancalaBoard,
     val registry: MancalaPlayers,
-    val currentSide: Side?,
+    val status: MancalaStatus,
     override val turnNumber: TurnNumber = TurnNumber(0),
     override val history: EventHistory<MancalaEvent> = EventHistory(),
 ) : BoardGameState<MancalaEvent, MancalaBoard>,
     HistoryWritableState<MancalaEvent> {
-    override val turn: TurnContext? get() = currentSide?.let { TurnContext(registry.playerOn(it)) }
+    override val turn: TurnContext? get() = status.turn
+
+    init {
+        when (val status = status) {
+            is MancalaStatus.AwaitingSow -> {
+                val activePlayer = registry.playerOn(status.activeSide)
+                require(status.turn.owner == activePlayer) { "The turn owner must control the active side." }
+                require(status.turn.decisionActors == setOf(activePlayer)) { "Only the active side's player may act." }
+            }
+
+            is MancalaStatus.ResolvingSow -> {
+                require(status.player == registry.playerOn(status.side)) {
+                    "The player must control the side being resolved."
+                }
+                require(status.from.side == status.side) { "The sow must originate on the side being resolved." }
+            }
+
+            is MancalaStatus.Won -> require(status.winner == registry.playerOn(status.winningSide)) {
+                "The winner must control the winning side."
+            }
+
+            MancalaStatus.Draw -> Unit
+        }
+    }
 
     override fun withHistory(history: EventHistory<MancalaEvent>) = copy(history = history)
 }
@@ -137,16 +180,18 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
                 steps += ResolutionStep.RuleDriven(END_GAME_COLLECTION_RULE, collectionEvents)
             }
             steps += ResolutionStep.RuleDriven(
-                TURN_ADVANCEMENT_RULE,
-                listOf(MancalaEvent.TurnAdvanced(nextSide = null, extraTurn = false)),
+                GAME_END_RULE,
+                listOf(completionEvent(state.registry, resolvedBoard)),
             )
         } else {
             val extraTurn = sowing.lastCup == Cup.Store(side)
+            val nextSide = if (extraTurn) side else side.opponent()
             steps += ResolutionStep.RuleDriven(
                 TURN_ADVANCEMENT_RULE,
                 listOf(
                     MancalaEvent.TurnAdvanced(
-                        nextSide = if (extraTurn) side else side.opponent(),
+                        nextPlayer = state.registry.playerOn(nextSide),
+                        nextSide = nextSide,
                         extraTurn = extraTurn,
                     ),
                 ),
@@ -156,7 +201,14 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
     }
 
     override fun reduce(state: MancalaState, event: MancalaEvent): MancalaState = when (event) {
-        is MancalaEvent.StonesSown -> state.copy(board = applySowing(state.board, event))
+        is MancalaEvent.StonesSown -> state.copy(
+            board = applySowing(state.board, event),
+            status = MancalaStatus.ResolvingSow(
+                player = checkNotNull(state.turnOwner),
+                side = event.from.side,
+                from = event.from,
+            ),
+        )
 
         is MancalaEvent.StonesCaptured -> state.copy(
             board = state.board.empty(event.landingPit).empty(event.oppositePit)
@@ -166,19 +218,35 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
         is MancalaEvent.RemainingStonesCollected -> state.copy(board = state.board.collectSide(event.side))
 
         is MancalaEvent.TurnAdvanced -> state.copy(
-            currentSide = event.nextSide,
+            status = MancalaStatus.AwaitingSow(TurnContext(event.nextPlayer), event.nextSide),
+            turnNumber = TurnNumber(state.turnNumber.value + 1),
+        )
+
+        is MancalaEvent.GameWon -> state.copy(
+            status = MancalaStatus.Won(event.winner, event.winningSide),
+            turnNumber = TurnNumber(state.turnNumber.value + 1),
+        )
+
+        MancalaEvent.GameDrawn -> state.copy(
+            status = MancalaStatus.Draw,
             turnNumber = TurnNumber(state.turnNumber.value + 1),
         )
     }
 
-    override fun outcome(state: MancalaState): GameOutcome {
-        if (state.currentSide != null) return GameOutcome.InProgress
-        val southScore = state.board.stores.getValue(Side.SOUTH)
-        val northScore = state.board.stores.getValue(Side.NORTH)
+    override fun outcome(state: MancalaState): GameOutcome = when (val status = state.status) {
+        is MancalaStatus.AwaitingSow -> GameOutcome.InProgress
+        is MancalaStatus.ResolvingSow -> GameOutcome.InProgress
+        is MancalaStatus.Won -> GameOutcome.PlayerWon(status.winner)
+        MancalaStatus.Draw -> GameOutcome.Draw
+    }
+
+    private fun completionEvent(registry: MancalaPlayers, board: MancalaBoard): MancalaEvent {
+        val southScore = board.stores.getValue(Side.SOUTH)
+        val northScore = board.stores.getValue(Side.NORTH)
         return when {
-            southScore > northScore -> GameOutcome.PlayerWon(state.registry.south)
-            northScore > southScore -> GameOutcome.PlayerWon(state.registry.north)
-            else -> GameOutcome.Draw
+            southScore > northScore -> MancalaEvent.GameWon(registry.south, Side.SOUTH)
+            northScore > southScore -> MancalaEvent.GameWon(registry.north, Side.NORTH)
+            else -> MancalaEvent.GameDrawn
         }
     }
 
@@ -237,6 +305,7 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
         private val CAPTURE_RULE = RuleId("mancala.capture")
         private val END_GAME_COLLECTION_RULE = RuleId("mancala.collect-remaining-stones")
         private val TURN_ADVANCEMENT_RULE = RuleId("mancala.advance-turn")
+        private val GAME_END_RULE = RuleId("mancala.game-end")
 
         fun newGame(
             south: PlayerId,
@@ -245,7 +314,7 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
         ): Pair<Mancala, MancalaState> {
             require(south != north)
             val game = Mancala(configuration)
-            return game to MancalaState(MancalaBoard.initial(configuration), MancalaPlayers(south, north), Side.SOUTH)
+            return game to initialState(configuration, MancalaPlayers(south, north))
         }
 
         fun newSelfPlayGame(
@@ -253,7 +322,7 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
             configuration: KalahConfiguration = KalahConfiguration(),
         ): Pair<Mancala, MancalaState> {
             val game = Mancala(configuration)
-            return game to MancalaState(MancalaBoard.initial(configuration), MancalaPlayers(player, player), Side.SOUTH)
+            return game to initialState(configuration, MancalaPlayers(player, player))
         }
 
         fun customGame(
@@ -264,12 +333,43 @@ class Mancala(override val configuration: KalahConfiguration) : ConfigurableGame
             configuration: KalahConfiguration = KalahConfiguration(pitsPerSide = board.pitsPerSide),
         ): Pair<Mancala, MancalaState> {
             require(board.pitsPerSide == configuration.pitsPerSide)
+            require(south != north) { "Opposing sides require distinct players; use customSelfPlayGame for one player." }
             val game = Mancala(configuration)
-            return game to MancalaState(board, MancalaPlayers(south, north), currentSide)
+            val registry = MancalaPlayers(south, north)
+            return game to MancalaState(
+                board,
+                registry,
+                MancalaStatus.AwaitingSow(TurnContext(registry.playerOn(currentSide)), currentSide),
+            )
         }
+
+        fun customSelfPlayGame(
+            player: PlayerId,
+            board: MancalaBoard,
+            currentSide: Side = Side.SOUTH,
+            configuration: KalahConfiguration = KalahConfiguration(pitsPerSide = board.pitsPerSide),
+        ): Pair<Mancala, MancalaState> {
+            require(board.pitsPerSide == configuration.pitsPerSide)
+            val game = Mancala(configuration)
+            val registry = MancalaPlayers(player, player)
+            return game to MancalaState(
+                board,
+                registry,
+                MancalaStatus.AwaitingSow(TurnContext(player), currentSide),
+            )
+        }
+
+        private fun initialState(configuration: KalahConfiguration, registry: MancalaPlayers): MancalaState = MancalaState(
+            MancalaBoard.initial(configuration),
+            registry,
+            MancalaStatus.AwaitingSow(TurnContext(registry.south), Side.SOUTH),
+        )
     }
 }
 
 internal fun Side.opponent() = if (this == Side.SOUTH) Side.NORTH else Side.SOUTH
 
-internal fun MancalaState.requireCurrentSide() = checkNotNull(currentSide) { "The game has ended" }
+val MancalaState.activeSide: Side?
+    get() = (status as? MancalaStatus.AwaitingSow)?.activeSide
+
+internal fun MancalaState.requireCurrentSide() = checkNotNull(activeSide) { "The game is not awaiting a sow." }

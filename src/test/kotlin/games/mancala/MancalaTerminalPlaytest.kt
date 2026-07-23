@@ -55,14 +55,20 @@ internal object MancalaTerminalRenderer {
 
     fun renderState(label: String, state: MancalaState): String = buildString {
         appendLine(label)
-        appendLine(
-            if (state.currentSide == null) {
-                "Turn: complete"
-            } else {
-                "Turn owner: ${state.turnOwner?.value}; active side: ${state.currentSide}"
-            },
-        )
+        appendLine(describeStatus(state.status))
         append(renderBoard(state.board))
+    }
+
+    private fun describeStatus(status: MancalaStatus): String = when (status) {
+        is MancalaStatus.AwaitingSow ->
+            "Awaiting sow: turn owner ${status.turn.owner.value}; active side ${status.activeSide}"
+
+        is MancalaStatus.ResolvingSow ->
+            "Resolving sow: ${status.player.value} on ${status.side}; no player decision required"
+
+        is MancalaStatus.Won -> "Complete: ${status.winner.value} won on ${status.winningSide}"
+
+        MancalaStatus.Draw -> "Complete: draw"
     }
 
     private fun describe(event: MancalaEvent): String = when (event) {
@@ -77,10 +83,13 @@ internal object MancalaTerminalRenderer {
             "Collected ${event.stones} remaining stones for ${event.side}"
 
         is MancalaEvent.TurnAdvanced -> when {
-            event.nextSide == null -> "Completed the game"
             event.extraTurn -> "Retained the turn on ${event.nextSide}"
             else -> "Advanced the turn to ${event.nextSide}"
         }
+
+        is MancalaEvent.GameWon -> "${event.winner.value} won on ${event.winningSide}"
+
+        MancalaEvent.GameDrawn -> "Completed the game in a draw"
     }
 
     private fun describeCup(cup: Cup): String = when (cup) {
